@@ -1,0 +1,44 @@
+# Please note it's not a system-wide settings, it's only for a current terminal
+# session. Point your f\w (if necessery) to execute /opt/etc/profile at console
+# logon.
+
+unset LD_BIND_NOW
+unset LD_LIBRARY_PATH
+unset LD_PRELOAD
+
+export PATH="/opt/sbin:/opt/bin:/opt/usr/sbin:/opt/usr/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+if [ -d /opt/etc/profile.d ]; then
+  for i in /opt/etc/profile.d/*.sh ; do
+    if [ -r "$i" ]; then
+      . $i
+    fi
+  done
+  unset i
+fi
+
+export HOME=$(grep -e "^${USER:-root}:" /opt/etc/passwd | cut -d: -f6)
+export HOME="${HOME:-/opt/root}"
+
+export EDITOR="${EDITOR:-/opt/bin/vi}"
+
+export SHELL="/opt/bin/sh"
+
+if [ "$SHELL" = "/opt/bin/sh" ]; then
+  export HISTFILE="$HOME/.ash_history"
+fi
+
+if [ "$(id -u)" -eq 0 ]; then
+  export PS1="\u@\h: \$(pwd) # "
+else
+  export PS1="\u@\h: \$(pwd) $ "
+fi
+
+export TEMP="/opt/tmp"
+export TMP="/opt/tmp"
+export TMPDIR="/opt/tmp"
+
+export TERMINFO="/opt/share/terminfo"
+export TERM="xterm"
+
+[ -n "$TZ" ] || export TZ=":$(readlink /opt/etc/localtime)"

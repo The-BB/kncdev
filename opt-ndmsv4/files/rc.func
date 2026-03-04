@@ -1,0 +1,328 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Copyright (C) 2024 Entware
+
+ACTION="$1"
+CALLER="$2"
+
+PATH="/opt/bin:/opt/sbin:/opt/usr/bin:/opt/usr/sbin"
+
+### colors
+ansi_bell="\007"
+ansi_std="\033[0m"
+ansi_red="\033[1;31m"
+ansi_green="\033[1;32m"
+ansi_yellow="\033[1;33m"
+ansi_blue="\033[1;34m"
+ansi_magenta="\033[1;35m"
+ansi_cyan="\033[1;36m"
+ansi_white="\033[1;37m"
+ansi_ul="\033[4m"
+ansi_blink="\033[5m"
+ansi_rev="\033[7m"
+
+### columns
+COLUMNS="${COLUMNS:-60}"
+
+### timer
+COUNTER=0
+LIMIT=${LIMIT:-10}
+
+### sending signal
+SIGNAL="${SIGNAL:-HUP}"
+
+### action messages
+msg_check() {
+  printf "$ansi_white %-${COLUMNS}s $ansi_std" "Checking status ($PROCS) ..."
+}
+
+msg_startup_disable() {
+  printf "$ansi_white %-${COLUMNS}s $ansi_std" "Disabling autorun ($PROCS) ..."
+}
+
+msg_startup_enable() {
+  printf "$ansi_white %-${COLUMNS}s $ansi_std" "Enabling autorun ($PROCS) ..."
+}
+
+msg_kill() {
+  printf "$ansi_white %-${COLUMNS}s $ansi_std" "Killing ($PROCS) ..."
+}
+
+msg_reload() {
+  printf "$ansi_white %-${COLUMNS}s $ansi_std" "Sending $SIGNAL to ($PROCS) ..."
+}
+
+msg_start() {
+  printf "$ansi_white %-${COLUMNS}s $ansi_std" "Starting ($0) ..."
+}
+
+msg_stop() {
+  printf "$ansi_white %-${COLUMNS}s $ansi_std" "Shutting down ($PROCS) ..."
+}
+
+### status messages
+msg_alive() {
+  printf "$ansi_green %s $ansi_magenta %s $ansi_std\n" "alive." "(PID=$PS_PID)"
+}
+
+msg_command_disabled() {
+  printf "$ansi_yellow %s $ansi_std\n" "skip: \"$ACTION\" command disabled."
+}
+
+msg_dead() {
+  printf "$ansi_red %s $ansi_std\n" "dead. ($0)"
+}
+
+msg_disabled() {
+  printf "$ansi_yellow %s $ansi_std\n" "already disabled."
+}
+
+msg_done() {
+  printf "$ansi_green %s $ansi_std\n" "done."
+}
+
+msg_enabled() {
+  printf "$ansi_yellow %s $ansi_std\n" "already enabled."
+}
+
+msg_failed() {
+  printf "$ansi_red %s $ansi_std\n" "failed."
+}
+
+msg_failed_signal() {
+  printf "$ansi_red %s $ansi_std\n" "failed: \"$SIGNAL\" signal not supported."
+}
+
+msg_running() {
+  printf "$ansi_yellow %s $ansi_std\n" "already running."
+}
+
+msg_skip() {
+  printf "$ansi_yellow %s $ansi_std\n" "skip."
+}
+
+msg_startup_disabled() {
+  printf "$ansi_cyan %s $ansi_std\n" "autorun disabled."
+}
+
+msg_stopped() {
+  printf "$ansi_red %s $ansi_std\n" "not running."
+}
+
+### get PID
+check_prog() {
+PS_PID="${PS_PID:-}"
+PS_STATS="${PS_STATS:-0}"
+
+if { [ "$PROG" = "/opt/sbin/dropbear" ]; } || [ -f "$PID_FILE" ]; then
+  PS_PID="$(cat "$PID_FILE")"
+elif [ -n "$(pgrep -a "$PROG" | cut -d' ' -f1)" ]; then
+  PS_PID="$(pgrep -a "$PROG" | cut -d' ' -f1 | head -n 1)"
+elif [ -n "$(pgrep -af "$PROG" | cut -d' ' -f1)" ]; then
+  PS_PID="$(pgrep -af "$PROG" | cut -d' ' -f1 | head -n 1)"
+else
+  PS_PID="$(pgrep -f "$PROG" | head -n 1)"
+fi
+
+if { { [ -n "$PS_PID" ] && [ "$(readlink "/proc/$PS_PID/exe")" = "$PROG" ]; } || \
+   { [ -n "$PS_PID" ] && [ "$(cat "/proc/$PS_PID/comm")" = "$PROCS" ]; } || \
+   { [ "$(grep -c '/opt/' "/proc/$PS_PID/cmdline")" -gt 0 ]; } }
+  then
+    PS_STATS=1
+    PS_PROC_DIR="/proc/$PS_PID"
+  else
+    PS_STATS=0
+    PS_PROC_DIR=""
+fi
+}
+
+do_check() {
+  msg_check && check_prog > /dev/null 2>&1
+  if [ "$ENABLED" = "no" ]; then
+    msg_startup_disabled && return 0
+  elif [ "$ACTION" = "start" ] && [ "$PS_STATS" = 1 ]; then
+    msg_running && return 0
+  elif [ "$ACTION" = "stop" ] && [ "$PS_STATS" = 0 ]; then
+    msg_stopped && return 1
+  elif [ "$PS_STATS" = 1 ]; then
+    msg_alive && return 0
+  else
+#    [ "$PS_STATS" = 0 ] && [ -f "$PID_FILE" ] && rm -f "$PID_FILE"
+    msg_dead && return 1
+  fi
+}
+
+do_start() {
+  [ "$CRITICAL" != "yes" ] && [ "$CALLER" = "cron" ] && return 7
+  [ "$ENABLED" = "yes" ] || return 1
+  (
+  msg_start
+  trap - EXIT HUP INT QUIT TERM TSTP
+  $PRECMD
+  #printf "\n\t%s\n" "run: $PREARGS $PROG $ARGS"
+  $PREARGS $PROG $ARGS > /dev/null 2>&1 &
+  while [ "$COUNTER" -le "$LIMIT" ] && [ -z "$PS_PID" ]; do
+    { [ "$PS_STATS" = 1 ] && [ -n "$PS_PID" ] && return 0 ; } || \
+    check_prog > /dev/null 2>&1
+    sleep 1
+    COUNTER="$(( COUNTER + 1 ))"
+  done
+  $POSTCMD > /dev/null 2>&1 &
+  check_prog > /dev/null 2>&1
+  if [ "$PS_STATS" = 1 ] && [ -n "$PS_PID" ] && [ -d "$PS_PROC_DIR" ]; then
+    logger "Started $DESC from $CALLER."
+    msg_done && return 0
+  else
+    logger "Failed to start $DESC from $CALLER."
+    msg_failed && return 255
+  fi
+  )
+}
+
+do_stop() {
+  [ "$ENABLED" = "yes" ] || return 1
+  case "$ACTION" in
+    stop|restart)
+        (
+        msg_stop
+        trap '' TERM
+        kill "$PS_PID" 2>/dev/null
+        while [ "$COUNTER" -le "$LIMIT" ] && [ "$PS_STATS" = 1 ]; do
+          { [ "$PS_STATS" = 0 ] && [ -z "$PS_PID" ] && return 0 ; } || \
+          check_prog > /dev/null 2>&1
+          sleep 1
+          COUNTER="$(( COUNTER + 1 ))"
+        done
+        check_prog > /dev/null 2>&1
+        if { [ ! -d "$PS_PROC_DIR" ]; } || \
+           { [ ! -e "/proc/$PS_PID/cmdline" ]; } || \
+           { [ "$PS_STATS" = 0 ] && [ -z "$PS_PID" ]; }
+          then
+            logger "The $DESC service has been stopped."
+           [ -f "$PID_FILE" ] && rm -f "$PID_FILE"
+            msg_done && return 0
+        else
+            logger "Failed to stop $DESC."
+            msg_failed && return 255
+        fi
+        )
+    ;;
+    kill)
+        (
+        msg_kill
+        if [ "$SKIP_KILL" = 1 ]; then
+          msg_command_disabled && return 0
+        fi
+        trap '' TERM
+#        kill -9 "$PS_PID" && check_prog > /dev/null 2>&1
+        killall -9 "$(ls -1 $PROG | cut -d/ -f4)" > /dev/null 2>&1 &
+#        sleep 1
+        check_prog > /dev/null 2>&1
+        if { [ ! -d "$PS_PROC_DIR" ]; } || \
+           { [ ! -e "/proc/$PS_PID/cmdline" ]; } || \
+           { [ "$PS_STATS" = 0 ] && [ -z "$PS_PID" ]; }
+          then
+            logger "The $DESC service has been killed."
+           [ -f "$PID_FILE" ] && rm -f "$PID_FILE"
+            msg_done && return 0
+        else
+            logger "Failed to kill $DESC."
+            msg_failed && return 255
+        fi
+        )
+    ;;
+  esac
+}
+
+do_reload() {
+  [ "$ENABLED" = "yes" ] || return 1
+  msg_reload
+  if [ "$SKIP_RELOAD" = 1 ]; then
+    msg_command_disabled && return 0
+  fi
+  (
+  trap - HUP INT
+  killall -"$SIGNAL" "$PROG" > /dev/null 2>&1
+  ) </dev/null 2>&1 1>/opt/tmp/nohup.out &
+  sleep 1
+  check_prog > /dev/null 2>&1
+  if [ -n "$PS_PID" ] && [ "$PS_STATS" = 1 ]; then
+    msg_done && return 0
+  else
+    msg_failed_signal && return 255
+  fi
+}
+
+do_enable() {
+  msg_startup_enable
+  if [ "$ENABLED" = "no" ]; then
+    sed -i 's,^ENABLED=no,ENABLED=yes,' "$0"
+    msg_done && return 0
+  else
+    msg_enabled && return 0
+  fi
+}
+
+do_disable() {
+  msg_startup_disable
+  if [ "$ENABLED" = "yes" ]; then
+    sed -i 's,^ENABLED=yes,ENABLED=no,' "$0"
+    msg_done && return 0
+  else
+    msg_disabled && return 0
+  fi
+}
+
+do_helps() {
+  printf "\n$ansi_blue %s $ansi_std\n" "Desc: $DESC"
+  printf "\n$ansi_white %s $ansi_std\n" "Syntax: $0 [command]"
+  printf "\n$ansi_white %s $ansi_std\n\n" "Availabel commands:"
+  printf "\t$ansi_white %-20s %s $ansi_std\n" "start" "Start the service."
+  printf "\t$ansi_white %-20s %s $ansi_std\n" "stop" "Stop the service."
+  printf "\t$ansi_white %-20s %s $ansi_std\n" "kill" "Kill the service."
+  printf "\t$ansi_white %-20s %s $ansi_std\n" "restart" "Restart the service."
+  printf "\t$ansi_white %-20s %s $ansi_std\n" "reload" "Reload configuration."
+  printf "\t$ansi_white %-20s %s $ansi_std\n" "reconfigure" "See <reload>."
+  printf "\t$ansi_white %-20s %s $ansi_std\n" "check" "Service status."
+  printf "\t$ansi_white %-20s %s $ansi_std\n" "status" "See <check>."
+  printf "\t$ansi_white %-20s %s $ansi_std\n" "enable" "Enable service autostart."
+  printf "\t$ansi_white %-20s %s $ansi_std\n" "disable" "Disable service autostart."
+  printf "\n"
+  exit 0
+}
+
+case "$ACTION" in
+    start)
+        do_check || do_start
+    ;;
+    kill|stop)
+        do_check && do_stop
+    ;;
+    restart)
+        do_check > /dev/null && do_stop
+        do_check > /dev/null || do_start
+    ;;
+    check|status)
+        do_check
+    ;;
+    reconfigure|reload)
+        { do_check > /dev/null && do_reload ; } || do_start
+    ;;
+    enable)
+        do_enable
+    ;;
+    disable)
+        "$0" stop > /dev/null 2>&1 && do_disable
+    ;;
+    help)
+        do_helps
+    ;;
+    *)
+        printf "$ansi_white %-${COLUMNS}s  %s $ansi_std\n" "Usage: $0" "{start|stop|kill|restart|[reconfigure|reload]|[check|status]}"
+        exit 1
+    ;;
+esac
+
+#logger "Leaving ${0##*/}."
+
+exit 0
