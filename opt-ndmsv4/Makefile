@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: GPL-2.0-only
 #
-# Copyright (C) 2024-2025 Entware
+# Copyright (C) 2024-2026 Entware
 
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opt-ndmsv4
-PKG_VERSION:=0.0.3
-PKG_RELEASE:=3
+PKG_VERSION:=0.0.4
+PKG_RELEASE:=1
 
 PKG_MAINTAINER:=Entware team, http://entware.net
 PKG_LICENSE:=GPL-2.0-only

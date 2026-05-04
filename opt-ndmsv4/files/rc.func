@@ -62,7 +62,7 @@ msg_stop() {
 
 ### status messages
 msg_alive() {
-  printf "$ansi_green %s $ansi_magenta %s $ansi_std\n" "alive." "(PID=$PS_PID)"
+  printf "$ansi_green %s $ansi_magenta %s $ansi_std\n" "alive." "(PID=$PS_PPID)"
 }
 
 msg_command_disabled() {
@@ -109,27 +109,27 @@ msg_stopped() {
   printf "$ansi_red %s $ansi_std\n" "not running."
 }
 
-### get PID
+### get PPID
 check_prog() {
-PS_PID="${PS_PID:-}"
+PS_PPID="${PS_PPID:-}"
 PS_STATS="${PS_STATS:-0}"
 
 if { [ "$PROG" = "/opt/sbin/dropbear" ]; } || [ -f "$PID_FILE" ]; then
-  PS_PID="$(cat "$PID_FILE")"
+  PS_PPID="$(cat "$PID_FILE")"
 elif [ -n "$(pgrep -a "$PROG" | cut -d' ' -f1)" ]; then
-  PS_PID="$(pgrep -a "$PROG" | cut -d' ' -f1 | head -n 1)"
+  PS_PPID="$(pgrep -a "$PROG" | cut -d' ' -f1 | head -n 1)"
 elif [ -n "$(pgrep -af "$PROG" | cut -d' ' -f1)" ]; then
-  PS_PID="$(pgrep -af "$PROG" | cut -d' ' -f1 | head -n 1)"
+  PS_PPID="$(pgrep -af "$PROG" | cut -d' ' -f1 | head -n 1)"
 else
-  PS_PID="$(pgrep -f "$PROG" | head -n 1)"
+  PS_PPID="$(pgrep -f "$PROG" | head -n 1)"
 fi
 
-if { { [ -n "$PS_PID" ] && [ "$(readlink "/proc/$PS_PID/exe")" = "$PROG" ]; } || \
-   { [ -n "$PS_PID" ] && [ "$(cat "/proc/$PS_PID/comm")" = "$PROCS" ]; } || \
-   { [ "$(grep -c '/opt/' "/proc/$PS_PID/cmdline")" -gt 0 ]; } }
+if { { [ -n "$PS_PPID" ] && [ "$(readlink "/proc/$PS_PPID/exe")" = "$PROG" ]; } || \
+   { [ -n "$PS_PPID" ] && [ "$(cat "/proc/$PS_PPID/comm")" = "$PROCS" ]; } || \
+   { [ "$(grep -c '/opt/' "/proc/$PS_PPID/cmdline")" -gt 0 ]; } }
   then
     PS_STATS=1
-    PS_PROC_DIR="/proc/$PS_PID"
+    PS_PROC_DIR="/proc/$PS_PPID"
   else
     PS_STATS=0
     PS_PROC_DIR=""
@@ -161,15 +161,15 @@ do_start() {
   $PRECMD
   #printf "\n\t%s\n" "run: $PREARGS $PROG $ARGS"
   $PREARGS $PROG $ARGS > /dev/null 2>&1 &
-  while [ "$COUNTER" -le "$LIMIT" ] && [ -z "$PS_PID" ]; do
-    { [ "$PS_STATS" = 1 ] && [ -n "$PS_PID" ] && return 0 ; } || \
+  while [ "$COUNTER" -le "$LIMIT" ] && [ -z "$PS_PPID" ]; do
+    { [ "$PS_STATS" = 1 ] && [ -n "$PS_PPID" ] && return 0 ; } || \
     check_prog > /dev/null 2>&1
     sleep 1
     COUNTER="$(( COUNTER + 1 ))"
   done
   $POSTCMD > /dev/null 2>&1 &
   check_prog > /dev/null 2>&1
-  if [ "$PS_STATS" = 1 ] && [ -n "$PS_PID" ] && [ -d "$PS_PROC_DIR" ]; then
+  if [ "$PS_STATS" = 1 ] && [ -n "$PS_PPID" ] && [ -d "$PS_PROC_DIR" ]; then
     logger "Started $DESC from $CALLER."
     msg_done && return 0
   else
@@ -186,17 +186,17 @@ do_stop() {
         (
         msg_stop
         trap '' TERM
-        kill "$PS_PID" 2>/dev/null
+        kill "$PS_PPID" 2>/dev/null
         while [ "$COUNTER" -le "$LIMIT" ] && [ "$PS_STATS" = 1 ]; do
-          { [ "$PS_STATS" = 0 ] && [ -z "$PS_PID" ] && return 0 ; } || \
+          { [ "$PS_STATS" = 0 ] && [ -z "$PS_PPID" ] && return 0 ; } || \
           check_prog > /dev/null 2>&1
           sleep 1
           COUNTER="$(( COUNTER + 1 ))"
         done
         check_prog > /dev/null 2>&1
         if { [ ! -d "$PS_PROC_DIR" ]; } || \
-           { [ ! -e "/proc/$PS_PID/cmdline" ]; } || \
-           { [ "$PS_STATS" = 0 ] && [ -z "$PS_PID" ]; }
+           { [ ! -e "/proc/$PS_PPID/cmdline" ]; } || \
+           { [ "$PS_STATS" = 0 ] && [ -z "$PS_PPID" ]; }
           then
             logger "The $DESC service has been stopped."
            [ -f "$PID_FILE" ] && rm -f "$PID_FILE"
@@ -214,13 +214,13 @@ do_stop() {
           msg_command_disabled && return 0
         fi
         trap '' TERM
-#        kill -9 "$PS_PID" && check_prog > /dev/null 2>&1
+#        kill -9 "$PS_PPID" && check_prog > /dev/null 2>&1
         killall -9 "$(ls -1 $PROG | cut -d/ -f4)" > /dev/null 2>&1 &
 #        sleep 1
         check_prog > /dev/null 2>&1
         if { [ ! -d "$PS_PROC_DIR" ]; } || \
-           { [ ! -e "/proc/$PS_PID/cmdline" ]; } || \
-           { [ "$PS_STATS" = 0 ] && [ -z "$PS_PID" ]; }
+           { [ ! -e "/proc/$PS_PPID/cmdline" ]; } || \
+           { [ "$PS_STATS" = 0 ] && [ -z "$PS_PPID" ]; }
           then
             logger "The $DESC service has been killed."
            [ -f "$PID_FILE" ] && rm -f "$PID_FILE"
@@ -246,7 +246,7 @@ do_reload() {
   ) </dev/null 2>&1 1>/opt/tmp/nohup.out &
   sleep 1
   check_prog > /dev/null 2>&1
-  if [ -n "$PS_PID" ] && [ "$PS_STATS" = 1 ]; then
+  if [ -n "$PS_PPID" ] && [ "$PS_STATS" = 1 ]; then
     msg_done && return 0
   else
     msg_failed_signal && return 255
