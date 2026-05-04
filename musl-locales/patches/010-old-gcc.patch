@@ -1,0 +1,11 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -19,7 +19,7 @@ if(Intl_LIBRARIES)
+     target_link_libraries(locale ${Intl_LIBRARIES})
+ endif()
+ target_compile_options(locale
+-  PRIVATE $<$<COMPILE_LANGUAGE:C>:-std=c23>
++  PRIVATE $<$<COMPILE_LANGUAGE:C>:-std=c17>
+ )
+ if(LOCALE_PROFILE)
+   install(PROGRAMS ${CMAKE_BINARY_DIR}/00locale.sh DESTINATION

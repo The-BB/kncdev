@@ -1,9 +1,0 @@
---- a/CMakeLists.txt
-+++ b/CMakeLists.txt
-@@ -1,5 +1,5 @@
- project(locales C)
--cmake_minimum_required(VERSION 2.8)
-+cmake_minimum_required(VERSION 2.8...3.10)
- 
- option(LOCALE_PROFILE "Install profile file setting the MUSL_LOCPATH environment variable" ON)
- 
